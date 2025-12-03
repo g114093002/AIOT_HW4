@@ -4,6 +4,7 @@ import json
 
 import streamlit as st
 from openai import OpenAI
+from openai.error import OpenAIError
 
 from pathlib import Path
 
@@ -21,18 +22,30 @@ def load_system_prompt(path: str = None) -> str:
     return open(path, "r", encoding="utf-8").read()
 
 
-def call_model(system_prompt: str, user_input: str, model: str, temperature: float):
-    client = OpenAI()
+def call_model(system_prompt: str, user_input: str, model: str, temperature: float, api_key: str | None = None):
+    """Call the OpenAI Chat Completions API. Pass api_key explicitly to make authentication clear.
+
+    Raises OpenAIError on API-level errors so callers can handle it and present user-friendly guidance.
+    """
+    client = OpenAI(api_key=api_key) if api_key else OpenAI()
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_input},
     ]
-    resp = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=500,
-    )
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=500,
+        )
+    except OpenAIError:
+        # Re-raise so the UI layer can show friendly advice without leaking secrets
+        raise
+    except Exception as e:
+        # Wrap other exceptions into a generic OpenAIError for unified handling
+        raise OpenAIError(str(e))
+
     try:
         return resp.choices[0].message.content
     except Exception:
@@ -59,17 +72,32 @@ if st.button("產生"):
     base = load_system_prompt()
     persona_instr = PERSONA_PREFIX.get(persona, "")
     combined = f"{base}\n\n# Persona instruction:\n{persona_instr}\n請將輸出 style 設為：{style}，tone 設為：{tone}。\n{extra}"
-    with st.spinner("正在聯絡模型..."):
-        out = call_model(combined, user_input, model=model, temperature=temperature)
-    st.subheader("原始模型回傳")
-    st.text_area("raw output", value=out, height=200)
-    st.subheader("解析後 JSON (若可解析)")
-    try:
-        parsed = json.loads(out)
-        st.json(parsed)
-    except Exception:
-        st.warning("模型回傳非 JSON 或解析失敗。請檢查 prompt 或嘗試使用預設參數。")
-        st.write(out)
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        st.error("找不到 OPENAI_API_KEY。請在環境變數中設定你的 OpenAI API Key，或在 Streamlit Cloud 的 app settings 設定它。")
+    else:
+        with st.spinner("正在聯絡模型..."):
+            try:
+                out = call_model(combined, user_input, model=model, temperature=temperature, api_key=api_key)
+            except OpenAIError as e:
+                # Provide actionable troubleshooting steps without leaking internal details
+                st.error("OpenAI API 發生錯誤：無法完成請求。")
+                st.markdown("**常見解決方法**：\n- 檢查 `OPENAI_API_KEY` 是否設定正確且未過期\n- 確認帳戶有足夠的餘額或配額\n- 檢查 `model` 參數是否為有效的模型名稱（或嘗試使用 `gpt-4o`/`gpt-4o-mini`）\n- 網路或防火牆可能阻擋至 api.openai.com 的存取")
+                st.write(f"錯誤摘要：{str(e)}")
+                st.stop()
+            except Exception as e:
+                st.error("發生非預期的錯誤：\n" + str(e))
+                st.stop()
+
+        st.subheader("原始模型回傳")
+        st.text_area("raw output", value=out, height=200)
+        st.subheader("解析後 JSON (若可解析)")
+        try:
+            parsed = json.loads(out)
+            st.json(parsed)
+        except Exception:
+            st.warning("模型回傳非 JSON 或解析失敗。請檢查 prompt 或嘗試使用預設參數。")
+            st.write(out)
 
 st.markdown("---")
 st.markdown("部署範例：在專案目錄下執行 `streamlit run app_streamlit.py`（PowerShell）：")
