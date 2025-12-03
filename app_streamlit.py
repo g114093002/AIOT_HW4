@@ -5,8 +5,13 @@ import json
 import streamlit as st
 from openai import OpenAI
 from openai.error import OpenAIError
-
 from pathlib import Path
+
+# Optional HF client
+try:
+    from huggingface_hub import InferenceApi
+except Exception:
+    InferenceApi = None
 
 BASE_PROMPT_PATH = Path(__file__).parent / "enhanced_prompt.txt"
 
@@ -52,6 +57,31 @@ def call_model(system_prompt: str, user_input: str, model: str, temperature: flo
         return str(resp)
 
 
+def call_hf_model(system_prompt: str, user_input: str, model: str, temperature: float, hf_token: str):
+    """Call Hugging Face Inference API via huggingface_hub.InferenceApi.
+
+    Returns generated text (string)."""
+    if InferenceApi is None:
+        raise RuntimeError("huggingface_hub not installed")
+    prompt = system_prompt + "\n使用者：" + user_input
+    api = InferenceApi(repo_id=model, token=hf_token)
+    # parameters may vary by model; keep conservative defaults
+    try:
+        output = api(inputs=prompt, parameters={"max_new_tokens": 256, "temperature": temperature})
+    except Exception as e:
+        raise RuntimeError(str(e))
+    # InferenceApi may return dict or str
+    if isinstance(output, dict):
+        # Common key 'generated_text' or list
+        if "generated_text" in output:
+            return output["generated_text"]
+        # some models return [{'generated_text': '...'}]
+        if isinstance(output, list) and len(output) > 0 and isinstance(output[0], dict) and "generated_text" in output[0]:
+            return output[0]["generated_text"]
+        return str(output)
+    return str(output)
+
+
 def mock_response(user_input: str, style: str, tone: str) -> str:
     """Generate a deterministic mock JSON response matching the prompt schema."""
     content = (
@@ -86,24 +116,36 @@ if st.button("產生"):
     base = load_system_prompt()
     persona_instr = PERSONA_PREFIX.get(persona, "")
     combined = f"{base}\n\n# Persona instruction:\n{persona_instr}\n請將輸出 style 設為：{style}，tone 設為：{tone}。\n{extra}"
-    api_key = os.environ.get("OPENAI_API_KEY")
-    # If no API key, fall back to mock mode so Streamlit app can run without a paid key
-    if not api_key:
-        st.info("未偵測到 OPENAI_API_KEY，啟用 Mock 模式（模擬回應）。若要使用真實模型請在 Streamlit Secrets 中設定 OPENAI_API_KEY。")
-        out = mock_response(user_input, style, tone)
-    else:
-        with st.spinner("正在聯絡模型..."):
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    hf_token = os.environ.get("HF_API_TOKEN")
+    hf_model = os.environ.get("HF_MODEL", os.environ.get("MODEL", "google/flan-t5-large"))
+
+    # Priority: OpenAI -> HuggingFace -> Mock
+    if openai_key:
+        with st.spinner("正在使用 OpenAI 模型..."):
             try:
-                out = call_model(combined, user_input, model=model, temperature=temperature, api_key=api_key)
+                out = call_model(combined, user_input, model=model, temperature=temperature, api_key=openai_key)
             except OpenAIError as e:
-                # Provide actionable troubleshooting steps without leaking internal details
-                st.error("OpenAI API 發生錯誤：無法完成請求。")
-                st.markdown("**常見解決方法**：\n- 檢查 `OPENAI_API_KEY` 是否設定正確且未過期\n- 確認帳戶有足夠的餘額或配額\n- 檢查 `model` 參數是否為有效的模型名稱（或嘗試使用 `gpt-4o`/`gpt-4o-mini`）\n- 網路或防火牆可能阻擋至 api.openai.com 的存取")
+                st.error("OpenAI API 發生錯誤：無法完成請求。請檢查 Key 或帳戶狀態。")
                 st.write(f"錯誤摘要：{str(e)}")
                 st.stop()
             except Exception as e:
                 st.error("發生非預期的錯誤：\n" + str(e))
                 st.stop()
+    elif hf_token:
+        if InferenceApi is None:
+            st.error("本環境未安裝 huggingface_hub；請安裝或使用 mock 模式。")
+            out = mock_response(user_input, style, tone)
+        else:
+            with st.spinner("正在使用 Hugging Face 模型..."):
+                try:
+                    out = call_hf_model(combined, user_input, hf_model, temperature, hf_token)
+                except Exception as e:
+                    st.error("呼叫 Hugging Face Inference API 時發生錯誤：\n" + str(e))
+                    st.stop()
+    else:
+        st.info("未偵測到 OPENAI_API_KEY 或 HF_API_TOKEN，啟用 Mock 模式（模擬回應）。若要使用真實模型請在 Streamlit Secrets 中設定相應的金鑰。")
+        out = mock_response(user_input, style, tone)
 
         st.subheader("原始模型回傳")
         st.text_area("raw output", value=out, height=200)

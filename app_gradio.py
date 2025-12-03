@@ -6,6 +6,11 @@ from typing import Tuple
 import gradio as gr
 
 from openai import OpenAI
+from openai.error import OpenAIError
+try:
+    from huggingface_hub import InferenceApi
+except Exception:
+    InferenceApi = None
 import os
 
 
@@ -71,6 +76,21 @@ def build_system_prompt(base_prompt_path: str, persona: str, extra_instructions:
     return combined
 
 
+def call_hf_model(system_prompt: str, user_input: str, model: str, temperature: float, hf_token: str):
+    if InferenceApi is None:
+        raise RuntimeError("huggingface_hub not installed")
+    prompt = system_prompt + "\n使用者：" + user_input
+    api = InferenceApi(repo_id=model, token=hf_token)
+    output = api(inputs=prompt, parameters={"max_new_tokens": 256, "temperature": temperature})
+    if isinstance(output, dict):
+        if "generated_text" in output:
+            return output["generated_text"]
+        if isinstance(output, list) and len(output) > 0 and isinstance(output[0], dict) and "generated_text" in output[0]:
+            return output[0]["generated_text"]
+        return str(output)
+    return str(output)
+
+
 def gradio_interface():
     with gr.Blocks(title="員瑛式思考生成器 — Gradio") as demo:
         gr.Markdown("# 員瑛式思考生成器 — Gradio 介面")
@@ -95,7 +115,28 @@ def gradio_interface():
                 extra += f"\n額外指示：{extra_instr}"
             system = build_system_prompt("enhanced_prompt.txt", persona_sel, extra)
             user_text = inp or "我今天忘了帶鑰匙，結果差點遲到。"
-            raw = call_model(system, user_text, model=model_name, temperature=temp)
+            # Prefer OpenAI if key present, otherwise try Hugging Face if HF_API_TOKEN present
+            openai_key = os.environ.get("OPENAI_API_KEY")
+            hf_token = os.environ.get("HF_API_TOKEN")
+            hf_model = os.environ.get("HF_MODEL", model_name)
+            if openai_key:
+                raw = call_model(system, user_text, model=model_name, temperature=temp)
+            elif hf_token:
+                if InferenceApi is None:
+                    raw = json.dumps({"error": "huggingface_hub not installed; cannot call HF"}, ensure_ascii=False)
+                else:
+                    try:
+                        raw = call_hf_model(system, user_text, hf_model, temp, hf_token)
+                    except Exception as e:
+                        raw = json.dumps({"error": str(e)}, ensure_ascii=False)
+            else:
+                # mock placeholder
+                raw = json.dumps({
+                    "style": style_sel,
+                    "tone": tone_sel,
+                    "content": f"[MOCK] {user_text} -> 這是一個模擬回應。",
+                    "highlights": ["模擬摘要"],
+                }, ensure_ascii=False)
             raw2, parsed = format_for_display(raw)
             return raw2, parsed
 
