@@ -5,8 +5,6 @@ from typing import Tuple
 
 import gradio as gr
 
-from openai import OpenAI
-from openai.error import OpenAIError
 try:
     from huggingface_hub import InferenceApi
 except Exception:
@@ -27,37 +25,8 @@ PERSONA_PREFIX = {
 
 
 def call_model(system_prompt: str, user_input: str, model: str = "gpt-4o", temperature: float = 0.7):
-    api_key = os.environ.get("OPENAI_API_KEY")
-    # If no API key present, the caller should use mock mode instead of calling this.
-    client = OpenAI(api_key=api_key) if api_key else None
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_input},
-    ]
-
-    if client is None:
-        # Should not call external API when no key; return a placeholder string
-        placeholder = {
-            "style": model,
-            "tone": "mock",
-            "content": f"[MOCK] {user_input} -> 這是一個模擬回應，請在環境變數中設定 OPENAI_API_KEY 以使用真實模型。",
-            "highlights": ["模擬回應", "範例摘要"],
-        }
-        return json.dumps(placeholder, ensure_ascii=False)
-
-    resp = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=500,
-    )
-
-    try:
-        text = resp.choices[0].message.content
-    except Exception:
-        text = str(resp)
-    return text
+    # legacy placeholder removed; use call_hf_model or mock via the UI logic
+    raise RuntimeError("call_model is deprecated; use Hugging Face Inference (call_hf_model) or mock mode")
 
 
 def format_for_display(raw: str) -> Tuple[str, dict]:
@@ -115,13 +84,10 @@ def gradio_interface():
                 extra += f"\n額外指示：{extra_instr}"
             system = build_system_prompt("enhanced_prompt.txt", persona_sel, extra)
             user_text = inp or "我今天忘了帶鑰匙，結果差點遲到。"
-            # Prefer OpenAI if key present, otherwise try Hugging Face if HF_API_TOKEN present
-            openai_key = os.environ.get("OPENAI_API_KEY")
+            # Prefer Hugging Face if HF_API_TOKEN present; otherwise use mock mode
             hf_token = os.environ.get("HF_API_TOKEN")
             hf_model = os.environ.get("HF_MODEL", model_name)
-            if openai_key:
-                raw = call_model(system, user_text, model=model_name, temperature=temp)
-            elif hf_token:
+            if hf_token:
                 if InferenceApi is None:
                     raw = json.dumps({"error": "huggingface_hub not installed; cannot call HF"}, ensure_ascii=False)
                 else:

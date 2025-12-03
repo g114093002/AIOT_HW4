@@ -3,9 +3,8 @@ import os
 import json
 
 import streamlit as st
-from openai import OpenAI
-from openai.error import OpenAIError
 from pathlib import Path
+from hf_pipeline import hf_chat_router
 
 # Optional HF client
 try:
@@ -27,32 +26,22 @@ def load_system_prompt(path: str = None) -> str:
     return open(path, "r", encoding="utf-8").read()
 
 
-def call_model(system_prompt: str, user_input: str, model: str, temperature: float, api_key: str | None = None):
-    """Call the OpenAI Chat Completions API. Pass api_key explicitly to make authentication clear.
+def call_model_via_hf_router(system_prompt: str, user_input: str, model: str, temperature: float, hf_token: str):
+    """Call Hugging Face Router chat endpoint via hf_pipeline.hf_chat_router.
 
-    Raises OpenAIError on API-level errors so callers can handle it and present user-friendly guidance.
+    Returns a string (message/text) or raises an exception on failure.
     """
-    client = OpenAI(api_key=api_key) if api_key else OpenAI()
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_input},
     ]
+    resp = hf_chat_router(messages, model, hf_token)
+    # Defensive parsing of response
     try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=500,
-        )
-    except OpenAIError:
-        # Re-raise so the UI layer can show friendly advice without leaking secrets
-        raise
-    except Exception as e:
-        # Wrap other exceptions into a generic OpenAIError for unified handling
-        raise OpenAIError(str(e))
-
-    try:
-        return resp.choices[0].message.content
+        choice = resp.get("choices")[0]
+        if isinstance(choice, dict):
+            return choice.get("message") or choice.get("text") or json.dumps(choice, ensure_ascii=False)
+        return str(choice)
     except Exception:
         return str(resp)
 
@@ -116,47 +105,31 @@ if st.button("產生"):
     base = load_system_prompt()
     persona_instr = PERSONA_PREFIX.get(persona, "")
     combined = f"{base}\n\n# Persona instruction:\n{persona_instr}\n請將輸出 style 設為：{style}，tone 設為：{tone}。\n{extra}"
-    openai_key = os.environ.get("OPENAI_API_KEY")
     hf_token = os.environ.get("HF_API_TOKEN")
     hf_model = os.environ.get("HF_MODEL", os.environ.get("MODEL", "google/flan-t5-large"))
 
-    # Priority: OpenAI -> HuggingFace -> Mock
-    if openai_key:
-        with st.spinner("正在使用 OpenAI 模型..."):
+    # Priority: Hugging Face -> Mock
+    if hf_token:
+        with st.spinner("正在使用 Hugging Face Router 模型..."):
             try:
-                out = call_model(combined, user_input, model=model, temperature=temperature, api_key=openai_key)
-            except OpenAIError as e:
-                st.error("OpenAI API 發生錯誤：無法完成請求。請檢查 Key 或帳戶狀態。")
-                st.write(f"錯誤摘要：{str(e)}")
-                st.stop()
+                out = call_model_via_hf_router(combined, user_input, hf_model, temperature, hf_token)
             except Exception as e:
-                st.error("發生非預期的錯誤：\n" + str(e))
+                st.error("呼叫 Hugging Face Router 時發生錯誤：\n" + str(e))
                 st.stop()
-    elif hf_token:
-        if InferenceApi is None:
-            st.error("本環境未安裝 huggingface_hub；請安裝或使用 mock 模式。")
-            out = mock_response(user_input, style, tone)
-        else:
-            with st.spinner("正在使用 Hugging Face 模型..."):
-                try:
-                    out = call_hf_model(combined, user_input, hf_model, temperature, hf_token)
-                except Exception as e:
-                    st.error("呼叫 Hugging Face Inference API 時發生錯誤：\n" + str(e))
-                    st.stop()
     else:
-        st.info("未偵測到 OPENAI_API_KEY 或 HF_API_TOKEN，啟用 Mock 模式（模擬回應）。若要使用真實模型請在 Streamlit Secrets 中設定相應的金鑰。")
+        st.info("未偵測到 HF_API_TOKEN，啟用 Mock 模式（模擬回應）。若要使用真實模型請在 Streamlit Secrets 中設定 HF_API_TOKEN。")
         out = mock_response(user_input, style, tone)
 
-        st.subheader("原始模型回傳")
-        st.text_area("raw output", value=out, height=200)
-        st.subheader("解析後 JSON (若可解析)")
-        try:
-            parsed = json.loads(out)
-            st.json(parsed)
-        except Exception:
-            st.warning("模型回傳非 JSON 或解析失敗。請檢查 prompt 或嘗試使用預設參數。")
-            st.write(out)
+    st.subheader("原始模型回傳")
+    st.text_area("raw output", value=out, height=200)
+    st.subheader("解析後 JSON (若可解析)")
+    try:
+        parsed = json.loads(out)
+        st.json(parsed)
+    except Exception:
+        st.warning("模型回傳非 JSON 或解析失敗。請檢查 prompt 或嘗試使用預設參數。")
+        st.write(out)
 
 st.markdown("---")
 st.markdown("部署範例：在專案目錄下執行 `streamlit run app_streamlit.py`（PowerShell）：")
-st.code("$env:OPENAI_API_KEY='你的_API_KEY'; streamlit run app_streamlit.py", language="powershell")
+st.code("$env:HF_API_TOKEN='你的_HF_TOKEN'; streamlit run app_streamlit.py", language="powershell")

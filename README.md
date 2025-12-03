@@ -19,7 +19,7 @@ python -m venv .venv; .\.venv\Scripts\Activate.ps1; pip install -r requirements.
 2. 設定 API Key（PowerShell 範例）：
 
 ```powershell
-$env:OPENAI_API_KEY = "你的_API_KEY"
+$env:HF_API_TOKEN = "你的_HF_TOKEN"
 ```
 
 3. 執行範例：

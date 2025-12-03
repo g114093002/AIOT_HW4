@@ -1,17 +1,13 @@
 """run_demo.py
 
 簡易範例：讀取 enhanced_prompt.txt 作為 system prompt，然後把使用者輸入送給模型。
-請先把 OPENAI_API_KEY 設為環境變數。
+請先把 HF_API_TOKEN 設為環境變數（Hugging Face Router 或模型的存取權杖）。
 """
 import os
 import json
 import argparse
 
-try:
-    from openai import OpenAI
-except Exception:
-    # 如果使用的 openai 版本不同，請安裝 openai >= 1.0.0
-    raise
+from hf_pipeline import hf_chat_router
 
 
 def load_system_prompt(path="enhanced_prompt.txt"):
@@ -27,9 +23,9 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.7)
     args = parser.parse_args()
 
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("[WARN] 未偵測到 OPENAI_API_KEY，將使用 Mock 模式輸出範例。若要使用真實模型，請設定環境變數。\n")
+    hf_token = os.environ.get("HF_API_TOKEN")
+    if not hf_token:
+        print("[WARN] 未偵測到 HF_API_TOKEN，將使用 Mock 模式輸出範例。若要使用真實模型，請設定環境變數 HF_API_TOKEN。\n")
 
     system_prompt = load_system_prompt(args.prompt)
     user_input = args.input or "我今天忘了帶鑰匙，結果差點遲到"
@@ -38,7 +34,7 @@ def main():
     print("Model:", args.model)
     print("User input:", user_input)
 
-    if not api_key:
+    if not hf_token:
         # Produce a mock JSON that matches the enhanced_prompt schema
         mock = {
             "style": "貼文",
@@ -48,27 +44,23 @@ def main():
         }
         text = json.dumps(mock, ensure_ascii=False)
     else:
-        client = OpenAI()
-
+        # Use HF Router chat (messages list) via hf_pipeline.hf_chat_router
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_input},
         ]
-
-        # Create chat completion
-        resp = client.chat.completions.create(
-            model=args.model,
-            messages=messages,
-            temperature=args.temperature,
-            max_tokens=500,
-        )
-
-        # The new OpenAI SDK returns choices[].message.content
         try:
-            text = resp.choices[0].message.content
-        except Exception:
-            # Fallback: try to stringify
-            text = str(resp)
+            resp = hf_chat_router(messages, args.model, hf_token)
+            # Defensive parsing: router returns choices[0].message or text
+            choice = resp.get("choices")[0]
+            msg = None
+            if isinstance(choice, dict):
+                msg = choice.get("message") or choice.get("text") or choice
+            else:
+                msg = choice
+            text = msg
+        except Exception as e:
+            text = json.dumps({"error": str(e)}, ensure_ascii=False)
 
     print("\n--- Raw model output ---")
     print(text)
