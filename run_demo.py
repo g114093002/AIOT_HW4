@@ -29,37 +29,46 @@ def main():
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        print("ERROR: Please set OPENAI_API_KEY environment variable.")
-        return
+        print("[WARN] 未偵測到 OPENAI_API_KEY，將使用 Mock 模式輸出範例。若要使用真實模型，請設定環境變數。\n")
 
     system_prompt = load_system_prompt(args.prompt)
     user_input = args.input or "我今天忘了帶鑰匙，結果差點遲到"
-
-    client = OpenAI()
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_input},
-    ]
 
     print("--- Request ---")
     print("Model:", args.model)
     print("User input:", user_input)
 
-    # Create chat completion
-    resp = client.chat.completions.create(
-        model=args.model,
-        messages=messages,
-        temperature=args.temperature,
-        max_tokens=500,
-    )
+    if not api_key:
+        # Produce a mock JSON that matches the enhanced_prompt schema
+        mock = {
+            "style": "貼文",
+            "tone": "幽默",
+            "content": f"[MOCK] {user_input} -> 這是一個模擬的員瑛式正向貼文。完全是 Lucky Vicky 呀!",
+            "highlights": ["模擬摘要", "模擬學習點"],
+        }
+        text = json.dumps(mock, ensure_ascii=False)
+    else:
+        client = OpenAI()
 
-    # The new OpenAI SDK returns choices[].message.content
-    try:
-        text = resp.choices[0].message.content
-    except Exception:
-        # Fallback: try to stringify
-        text = str(resp)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_input},
+        ]
+
+        # Create chat completion
+        resp = client.chat.completions.create(
+            model=args.model,
+            messages=messages,
+            temperature=args.temperature,
+            max_tokens=500,
+        )
+
+        # The new OpenAI SDK returns choices[].message.content
+        try:
+            text = resp.choices[0].message.content
+        except Exception:
+            # Fallback: try to stringify
+            text = str(resp)
 
     print("\n--- Raw model output ---")
     print(text)

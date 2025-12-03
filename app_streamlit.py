@@ -52,6 +52,20 @@ def call_model(system_prompt: str, user_input: str, model: str, temperature: flo
         return str(resp)
 
 
+def mock_response(user_input: str, style: str, tone: str) -> str:
+    """Generate a deterministic mock JSON response matching the prompt schema."""
+    content = (
+        f"{user_input} -> 這看起來其實是一件小小的幸運事！我把它想成一個正向的轉折，讓你更有能量面對下一步。完全是 Lucky Vicky 呀!"
+    )
+    mock = {
+        "style": style,
+        "tone": tone,
+        "content": content,
+        "highlights": ["把不便轉成趣事", "小事帶來正能量"],
+    }
+    return json.dumps(mock, ensure_ascii=False)
+
+
 st.set_page_config(page_title="員瑛式思考生成器 (Streamlit)", layout="wide")
 
 st.title("員瑛式思考生成器 — Streamlit 版")
@@ -73,8 +87,10 @@ if st.button("產生"):
     persona_instr = PERSONA_PREFIX.get(persona, "")
     combined = f"{base}\n\n# Persona instruction:\n{persona_instr}\n請將輸出 style 設為：{style}，tone 設為：{tone}。\n{extra}"
     api_key = os.environ.get("OPENAI_API_KEY")
+    # If no API key, fall back to mock mode so Streamlit app can run without a paid key
     if not api_key:
-        st.error("找不到 OPENAI_API_KEY。請在環境變數中設定你的 OpenAI API Key，或在 Streamlit Cloud 的 app settings 設定它。")
+        st.info("未偵測到 OPENAI_API_KEY，啟用 Mock 模式（模擬回應）。若要使用真實模型請在 Streamlit Secrets 中設定 OPENAI_API_KEY。")
+        out = mock_response(user_input, style, tone)
     else:
         with st.spinner("正在聯絡模型..."):
             try:

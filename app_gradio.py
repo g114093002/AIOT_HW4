@@ -6,6 +6,7 @@ from typing import Tuple
 import gradio as gr
 
 from openai import OpenAI
+import os
 
 
 def load_system_prompt(path: str = "enhanced_prompt.txt") -> str:
@@ -21,12 +22,24 @@ PERSONA_PREFIX = {
 
 
 def call_model(system_prompt: str, user_input: str, model: str = "gpt-4o", temperature: float = 0.7):
-    client = OpenAI()
+    api_key = os.environ.get("OPENAI_API_KEY")
+    # If no API key present, the caller should use mock mode instead of calling this.
+    client = OpenAI(api_key=api_key) if api_key else None
 
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_input},
     ]
+
+    if client is None:
+        # Should not call external API when no key; return a placeholder string
+        placeholder = {
+            "style": model,
+            "tone": "mock",
+            "content": f"[MOCK] {user_input} -> 這是一個模擬回應，請在環境變數中設定 OPENAI_API_KEY 以使用真實模型。",
+            "highlights": ["模擬回應", "範例摘要"],
+        }
+        return json.dumps(placeholder, ensure_ascii=False)
 
     resp = client.chat.completions.create(
         model=model,
