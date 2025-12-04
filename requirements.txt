@@ -1,20 +1,16 @@
-# Core Web Framework
+# 核心Web框架
 streamlit>=1.28.0
 plotly>=5.17.0
-streamlit-option-menu>=0.3.2
 
-# Data Processing
+# 數據處理
 numpy>=1.24.0
 pandas>=2.0.0
-scikit-learn>=1.3.0
 
-# Visualization
-matplotlib>=3.7.0
-seaborn>=0.12.0
+# 可視化
 Pillow>=10.0.0
 
-# Optional: For Jupyter Notebook (local development only)
-# jupyter==1.0.0
-# ipykernel==6.25.1
-# torch>=2.0.0
-# torchvision>=0.15.0
+# 可選: 僅本地開發需要
+# scikit-learn>=1.3.0
+# matplotlib>=3.7.0
+# seaborn>=0.12.0
+# streamlit-option-menu>=0.3.2

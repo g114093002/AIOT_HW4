@@ -1,0 +1,10 @@
+# System-level dependencies for Streamlit Cloud
+# This file is optional but can help resolve system dependency issues
+
+# 圖像處理庫
+libjpeg-turbo-progs
+libfreetype6-dev
+libopenjp2-7
+
+# 字體支持
+fonts-dejavu-core
