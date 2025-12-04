@@ -1,0 +1,127 @@
+{
+  "project_info": {
+    "title": "資料增強對八哥辨識模型的影響分析",
+    "description": "深入探討不同資料增強策略對遷移學習模型性能的影響",
+    "author": "AIOT Project",
+    "date": "2025-12-04"
+  },
+  "data_config": {
+    "data_dir": "mynah_data",
+    "test_size": 0.2,
+    "val_size": 0.1,
+    "train_size": 0.7,
+    "random_seed": 42
+  },
+  "model_config": {
+    "model_name": "ResNet18",
+    "pretrained": true,
+    "num_classes": "auto_detect",
+    "frozen_layers": ["layer1", "layer2"],
+    "fine_tune_layers": ["layer3", "layer4", "fc"]
+  },
+  "training_config": {
+    "device": "cuda",
+    "epochs": 50,
+    "batch_size": 32,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "optimizer": "Adam",
+    "scheduler": "StepLR",
+    "scheduler_step": 10,
+    "scheduler_gamma": 0.1,
+    "early_stopping_patience": 10,
+    "loss_function": "CrossEntropyLoss"
+  },
+  "image_config": {
+    "image_size": 224,
+    "normalize_mean": [0.485, 0.456, 0.406],
+    "normalize_std": [0.229, 0.224, 0.225],
+    "supported_formats": ["jpg", "jpeg", "png"]
+  },
+  "augmentation_strategies": {
+    "Baseline": {
+      "description": "無增強 - 基線方案",
+      "operations": ["resize", "normalize"],
+      "parameters": {}
+    },
+    "Geometric": {
+      "description": "幾何增強 - 水平翻轉和旋轉",
+      "operations": ["resize", "horizontal_flip", "rotation", "normalize"],
+      "parameters": {
+        "horizontal_flip_prob": 0.5,
+        "rotation_degrees": 20
+      }
+    },
+    "Color": {
+      "description": "顏色增強 - 亮度、對比、飽和度調整",
+      "operations": ["resize", "color_jitter", "normalize"],
+      "parameters": {
+        "brightness": 0.2,
+        "contrast": 0.2,
+        "saturation": 0.2,
+        "hue": 0.1
+      }
+    },
+    "Combined": {
+      "description": "強化增強 - 幾何和顏色增強組合",
+      "operations": ["resize", "horizontal_flip", "rotation", "color_jitter", "normalize"],
+      "parameters": {
+        "horizontal_flip_prob": 0.5,
+        "rotation_degrees": 20,
+        "brightness": 0.2,
+        "contrast": 0.2,
+        "saturation": 0.2,
+        "hue": 0.1
+      }
+    },
+    "Occlusion": {
+      "description": "遮擋增強 - 組合增強加上隨機擦除",
+      "operations": ["resize", "horizontal_flip", "rotation", "color_jitter", "random_erasing", "normalize"],
+      "parameters": {
+        "horizontal_flip_prob": 0.5,
+        "rotation_degrees": 20,
+        "brightness": 0.2,
+        "contrast": 0.2,
+        "saturation": 0.2,
+        "hue": 0.1,
+        "erasing_prob": 0.5,
+        "erasing_scale": [0.02, 0.33],
+        "erasing_ratio": [0.3, 3.3]
+      }
+    }
+  },
+  "evaluation_metrics": [
+    "accuracy",
+    "precision",
+    "recall",
+    "f1_score",
+    "auc_roc",
+    "confusion_matrix",
+    "classification_report"
+  ],
+  "visualization_config": {
+    "figure_dpi": 150,
+    "figure_style": "seaborn-v0_8-darkgrid",
+    "color_palette": "husl",
+    "save_format": "png"
+  },
+  "output_config": {
+    "models_dir": "models",
+    "results_dir": "results",
+    "save_best_model": true,
+    "save_metrics": true,
+    "save_visualizations": true,
+    "save_report": true
+  },
+  "output_files": [
+    "sample_images.png",
+    "augmentation_visualization.png",
+    "augmentation_effects.png",
+    "training_curves.png",
+    "metrics_comparison.png",
+    "confusion_matrices.png",
+    "overall_ranking.png",
+    "metrics_comparison.csv",
+    "research_conclusion.txt"
+  ]
+}
